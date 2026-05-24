@@ -20,7 +20,7 @@ Tuning workflow:
     4. Run --mode generate to produce abm_outputs.csv
 
 Dependencies: run the following line of code:
-    pip install numpy pandas scipy matplotlib multiprocessing time dataclasses enum collections scipy.signal argparse __future__
+    pip install numpy pandas scipy matplotlib
 """
 
 from __future__ import annotations
