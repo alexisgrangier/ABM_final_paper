@@ -1,0 +1,17 @@
+[project]
+name = "SEIRD_ABM"
+version = "0.1.0"
+description = "Bayesian agent-based model of infectious disease transmission in an urban center"
+requires-python = "==3.12.*"
+dependencies = [
+    "numpy",
+    "pandas",
+    "matplotlib",
+    "jupyterlab",
+    "streamlit>=1.57.0",
+    "altair>=6.1.0",
+    "pymc",
+    "arviz",
+    "seaborn",
+    "graphviz>=0.21",
+]
