@@ -24,6 +24,7 @@ Dependencies: run the following line of code:
 """
 
 from __future__ import annotations
+import os
 import numpy as np
 import pandas as pd
 import argparse
@@ -33,6 +34,12 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from collections import deque
 from scipy.signal import find_peaks
+
+# ── Output directories ────────────────────────────────────────────────────────
+DIR_DATA  = os.path.join("data", "processed")
+DIR_PLOTS = os.path.join("outputs", "plots")
+os.makedirs(DIR_DATA,  exist_ok=True)
+os.makedirs(DIR_PLOTS, exist_ok=True)
 
 # ═════════════════════════════════════════════════════════════════════════════
 # ██  TUNING PARAMETERS — adjust these until all diagnostics show ✓  ██████████
@@ -370,6 +377,7 @@ def run_simulation(
     zone: str,
     seed: int,
     policy_active: bool,
+    n_ticks: int | None = None,
 ) -> tuple[list[dict], Population]:
 
     rng      = np.random.default_rng(seed)
@@ -378,8 +386,9 @@ def run_simulation(
     ministry = Ministry(pop_size=POPULATION_SIZE)
     daily    = []
     conf_buf = 0
+    _ticks   = n_ticks if n_ticks is not None else TOTAL_TICKS
 
-    for tick in range(TOTAL_TICKS):
+    for tick in range(_ticks):
 
         # Spark: spontaneous exposure — prevents epidemic extinction between waves
         susc_idx = np.where(pop.state == S.SUSCEPTIBLE)[0]
@@ -595,6 +604,22 @@ def run_diagnostics():
         ax1.set_ylabel("Infectious agents")
         ax1.legend(fontsize=7)
 
+        # save panel 1 individually
+        fig_p1, ax_p1 = plt.subplots(figsize=(7, 4))
+        ax_p1.plot(df_on0["day"],  df_on0["infectious"],        "b-",  lw=2,   label="Policy ON")
+        ax_p1.plot(df_off0["day"], df_off0["infectious"],       "r--", lw=2,   label="Policy OFF")
+        ax_p1.plot(df_on0["day"],  df_on0["alert_level"] * 20, "g:",  lw=1.5, label="Alert ×20")
+        ax_p1.axhline(WAVE_MIN_HEIGHT, color="gray", lw=1, linestyle="--",
+                      label=f"Wave threshold ({WAVE_MIN_HEIGHT})")
+        ax_p1.set_title(f"{zone} — Epidemic curve (seed=42)")
+        ax_p1.set_xlabel("Day"); ax_p1.set_ylabel("Infectious agents")
+        ax_p1.legend(fontsize=8)
+        fig_p1.tight_layout()
+        p1_path = os.path.join(DIR_PLOTS, f"diag_{zone}_epidemic_curve.png")
+        fig_p1.savefig(p1_path, dpi=150, bbox_inches="tight")
+        plt.close(fig_p1)
+        print(f"  Plot saved → {p1_path}")
+
         # ── Panel 2: daily difference (OFF − ON) across all 3 seeds ─────────
         ax2 = axes[zi, 1]
         for s_i, seed in enumerate(seeds):
@@ -612,10 +637,34 @@ def run_diagnostics():
             0, alpha=0.12, color="steelblue",
         )
         ax2.set_title("Policy impact: infectious(OFF) minus infectious(ON) -- positive means policy reduces cases")
-
         ax2.set_xlabel("Day")
         ax2.set_ylabel("Difference in infectious agents (OFF − ON)")
         ax2.legend(fontsize=8)
+
+        # save panel 2 individually
+        fig_p2, ax_p2 = plt.subplots(figsize=(7, 4))
+        for s_i, seed in enumerate(seeds):
+            df_on_s  = pd.DataFrame(daily_on_list[s_i])
+            df_off_s = pd.DataFrame(daily_off_list[s_i])
+            diff  = df_off_s["infectious"].values - df_on_s["infectious"].values
+            alpha = 0.9 if s_i == 0 else 0.45
+            lw    = 2.0 if s_i == 0 else 1.2
+            ax_p2.plot(df_on_s["day"], diff, lw=lw, alpha=alpha, label=f"seed {seed}")
+        ax_p2.axhline(0, color="black", lw=1, linestyle="--")
+        ax_p2.fill_between(
+            pd.DataFrame(daily_on_list[0])["day"],
+            pd.DataFrame(daily_off_list[0])["infectious"].values -
+            pd.DataFrame(daily_on_list[0])["infectious"].values,
+            0, alpha=0.12, color="steelblue",
+        )
+        ax_p2.set_title(f"{zone} — Policy impact (OFF − ON infectious)")
+        ax_p2.set_xlabel("Day"); ax_p2.set_ylabel("Difference in infectious agents")
+        ax_p2.legend(fontsize=8)
+        fig_p2.tight_layout()
+        p2_path = os.path.join(DIR_PLOTS, f"diag_{zone}_policy_impact.png")
+        fig_p2.savefig(p2_path, dpi=150, bbox_inches="tight")
+        plt.close(fig_p2)
+        print(f"  Plot saved → {p2_path}")
 
         # ── Panel 3: policy effect across seeds ──────────────────────────────
         ax3  = axes[zi, 2]
@@ -627,6 +676,20 @@ def run_diagnostics():
         ax3.set_xticklabels([f"seed {s}" for s in seeds])
         ax3.set_ylabel("Policy effect\n(mean_peak OFF − ON) / OFF")
         ax3.set_title("Policy effect by seed\n(positive = policy lowers mean peak)")
+
+        # save panel 3 individually
+        fig_p3, ax_p3 = plt.subplots(figsize=(5, 4))
+        ax_p3.bar(range(len(seeds)), pes, color=cols, alpha=0.7)
+        ax_p3.axhline(0, color="black", lw=1)
+        ax_p3.set_xticks(range(len(seeds)))
+        ax_p3.set_xticklabels([f"seed {s}" for s in seeds])
+        ax_p3.set_ylabel("Policy effect\n(mean_peak OFF − ON) / OFF")
+        ax_p3.set_title(f"{zone} — Policy effect by seed")
+        fig_p3.tight_layout()
+        p3_path = os.path.join(DIR_PLOTS, f"diag_{zone}_policy_effect.png")
+        fig_p3.savefig(p3_path, dpi=150, bbox_inches="tight")
+        plt.close(fig_p3)
+        print(f"  Plot saved → {p3_path}")
 
     # ── Auto-evaluating checklist ─────────────────────────────────────────────
     df_r = pd.DataFrame(all_results)
@@ -658,7 +721,8 @@ def run_diagnostics():
     ]
 
     plt.tight_layout()
-    plt.savefig("diagnostics.png", dpi=150, bbox_inches="tight")
+    plot_path = os.path.join(DIR_PLOTS, "diagnostics.png")
+    plt.savefig(plot_path, dpi=150, bbox_inches="tight")
 
     print(f"\n{'='*70}")
     print("CHECKLIST:")
@@ -674,7 +738,7 @@ def run_diagnostics():
     else:
         print("\n  Fix failing checks → adjust parameters above → re-run --mode diagnose")
 
-    print(f"\nPlot saved → diagnostics.png")
+    print(f"\nPlot saved → {plot_path}")
     print("=" * 70)
 
 
@@ -739,6 +803,71 @@ def run_sweep():
           f"{'✓' if sparse_pe > dense_pe else '✗ (sparse should have larger effect)'}")
     print()
     print("If all ✓ → run --mode generate")
+
+    # ── Sweep plots ───────────────────────────────────────────────────────────
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    on_df    = df[df["policy_active"] == 1]
+    zones    = ["dense_periphery", "sparse_periphery"]
+    betas    = sorted(df["beta0"].unique())
+    zone_colors = {"dense_periphery": "steelblue", "sparse_periphery": "darkorange"}
+
+    # Plot 1: mean_peak_infectious ON vs OFF by beta0, per zone
+    fig1, axes1 = plt.subplots(1, len(zones), figsize=(6 * len(zones), 4), sharey=True)
+    for ax, zone in zip(axes1, zones):
+        grp_on  = df[(df["policy_active"] == 1) & (df["zone"] == zone)].groupby("beta0")["mean_peak_infectious"].mean()
+        grp_off = df[(df["policy_active"] == 0) & (df["zone"] == zone)].groupby("beta0")["mean_peak_infectious"].mean()
+        ax.plot(grp_on.index,  grp_on.values,  "o-", color=zone_colors[zone], lw=2, label="Policy ON")
+        ax.plot(grp_off.index, grp_off.values, "s--", color=zone_colors[zone], lw=2, alpha=0.5, label="Policy OFF")
+        ax.set_title(zone)
+        ax.set_xlabel("β₀")
+        ax.set_ylabel("Mean peak infectious")
+        ax.legend(fontsize=8)
+    fig1.suptitle("Mean peak infectious: policy ON vs OFF by β₀ and zone", fontsize=11)
+    fig1.tight_layout()
+    p_sweep1 = os.path.join(DIR_PLOTS, "sweep_mean_peak_by_beta.png")
+    fig1.savefig(p_sweep1, dpi=150, bbox_inches="tight")
+    plt.close(fig1)
+    print(f"  Plot saved → {p_sweep1}")
+
+    # Plot 2: policy effect (PE) by beta0, per zone
+    fig2, ax2 = plt.subplots(figsize=(7, 4))
+    for zone in zones:
+        pe_by_beta = pairs.merge(
+            df[["scenario_id","zone","beta0"]].drop_duplicates(),
+            on=["scenario_id","zone"]
+        )
+        grp = pe_by_beta[pe_by_beta["zone"] == zone].groupby("beta0")["pe"].mean()
+        ax2.plot(grp.index, grp.values, "o-", color=zone_colors[zone], lw=2, label=zone)
+    ax2.axhline(0, color="black", lw=1, linestyle="--")
+    ax2.set_xlabel("β₀")
+    ax2.set_ylabel("Mean policy effect\n(mpi_off − mpi_on) / mpi_off")
+    ax2.set_title("Policy effect by β₀ and zone")
+    ax2.legend(fontsize=8)
+    fig2.tight_layout()
+    p_sweep2 = os.path.join(DIR_PLOTS, "sweep_policy_effect_by_beta.png")
+    fig2.savefig(p_sweep2, dpi=150, bbox_inches="tight")
+    plt.close(fig2)
+    print(f"  Plot saved → {p_sweep2}")
+
+    # Plot 3: n_waves heatmap (beta0 × zone)
+    fig3, ax3 = plt.subplots(figsize=(6, 3))
+    pivot = on_df.groupby(["zone", "beta0"])["n_waves"].mean().unstack("beta0")
+    im = ax3.imshow(pivot.values, aspect="auto", cmap="YlOrRd")
+    ax3.set_xticks(range(len(betas)))
+    ax3.set_xticklabels([f"{b:.3f}" for b in betas], fontsize=8)
+    ax3.set_yticks(range(len(pivot.index)))
+    ax3.set_yticklabels(pivot.index, fontsize=8)
+    ax3.set_xlabel("β₀"); ax3.set_ylabel("Zone")
+    ax3.set_title("Mean number of waves (policy ON)")
+    plt.colorbar(im, ax=ax3, label="n_waves")
+    fig3.tight_layout()
+    p_sweep3 = os.path.join(DIR_PLOTS, "sweep_n_waves_heatmap.png")
+    fig3.savefig(p_sweep3, dpi=150, bbox_inches="tight")
+    plt.close(fig3)
+    print(f"  Plot saved → {p_sweep3}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -816,9 +945,35 @@ def run_generate():
     ]
     df = df[[c for c in cols if c in df.columns]]
     df = df.sort_values(["group_id","run_id","policy_active"]).reset_index(drop=True)
-    df.to_csv("abm_outputs.csv", index=False)
+    csv_path = os.path.join(DIR_DATA, "abm_outputs.csv")
+    df.to_csv(csv_path, index=False)
+    print(f"Saved {len(df)} rows → {csv_path}")
 
-    print(f"Saved {len(df)} rows → abm_outputs.csv")
+    # ── Posterior CSV for Bayesian calibration ────────────────────────────────
+    # Keep only policy-ON runs (these are what the app calibrates against).
+    # Weight each particle by how well it matches the target behaviour:
+    #   - higher policy_effect  → more informative run  (reward)
+    #   - lower mean_peak       → epidemic stayed bounded (reward)
+    #   - n_waves >= 1          → sustained dynamics, not extinction (reward)
+    # Weights are normalised to sum to 1 so they act as a proper discrete
+    # probability distribution for the PPC sampler in the app.
+    post = df[df["policy_active"] == 1].copy()
+
+    pe_score   = post["policy_effect"].clip(lower=0)
+    peak_score = 1.0 / (post["mean_peak_infectious"].clip(lower=1))
+    wave_score = (post["n_waves"] >= 1).astype(float)
+
+    raw_weight     = (pe_score + peak_score + wave_score).clip(lower=1e-6)
+    post["weight"] = raw_weight / raw_weight.sum()
+
+    posterior_cols = ["beta0", "zone", "weight",
+                      "mean_peak_infectious", "n_waves", "policy_effect",
+                      "mean_compliance", "mean_immunity_days", "group_label"]
+    post = post[[c for c in posterior_cols if c in post.columns]]
+
+    posterior_path = os.path.join(DIR_DATA, "posterior.csv")
+    post.to_csv(posterior_path, index=False)
+    print(f"Saved {len(post)} posterior particles → {posterior_path}")
     print()
     print("Summary (policy=ON runs, mean across 20 runs per group):")
     on_df = df[df["policy_active"] == 1]
@@ -828,6 +983,422 @@ def run_generate():
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# ABC-SMC Calibration
+# ═════════════════════════════════════════════════════════════════════════════
+"""
+Proper Approximate Bayesian Computation — Sequential Monte Carlo (ABC-SMC).
+
+Goal
+----
+Infer a posterior distribution over β₀ (and zone mixture) given a set of
+observed summary statistics.  The posterior tells you: given what we observe
+about the epidemic, which transmission rates are plausible?
+
+Method
+------
+ABC-SMC runs T populations of N particles.  Each population tightens an
+acceptance threshold ε, so the particles progressively concentrate in the
+region of parameter space that reproduces the observed data.
+
+Steps per population t:
+  1. Sample a candidate θ* from the previous weighted population
+     (or from the prior for t=0).
+  2. Perturb θ* with a Gaussian kernel (prevents particle collapse).
+  3. Simulate the model with θ*.
+  4. Compute distance d(S_obs, S_sim) between observed and simulated
+     summary statistics.
+  5. Accept if d < ε_t; otherwise reject.
+  6. Re-weight accepted particles by prior(θ*) / Σ w_{t-1} K(θ*|θ).
+  7. Normalise weights.
+
+Summary statistics (what we match)
+-----------------------------------
+  - peak_infectious     : height of the largest epidemic wave
+  - peak_day            : day on which the peak occurs
+  - attack_rate         : fraction of population ever infected
+  - n_waves             : number of distinct epidemic waves
+  - mean_alert_level    : average alert level (proxy for policy activation)
+
+All statistics are standardised before computing the Euclidean distance so
+that no single statistic dominates.
+
+Prior
+-----
+  β₀  ~ Uniform(0.005, 0.040)   — broad, covers all BETA_SCENARIOS
+  zone ~ Categorical([0.5, 0.5]) — equal prior on both zones
+
+Output
+------
+  data/processed/posterior.csv   — weighted particles ready for app upload
+    columns: beta0, zone, weight, [summary stats]
+  outputs/plots/abc_smc_posterior.png — marginal + joint posterior plots
+"""
+
+# ── ABC targets (set these to match your observed / target epidemic) ──────────
+# These are the "observed data" your model needs to reproduce.
+# If you have real surveillance data, replace these with your empirical values.
+# Default: mid-range synthetic target consistent with BASE_BETA=0.020.
+# Targets derived empirically from --mode diagnose at BASE_BETA=0.020,
+# averaged across both zones (dense + sparse) and 3 seeds (42, 123, 999),
+# policy ON runs. This makes calibration find β₀ values that reproduce
+# the reference scenario dynamics rather than arbitrary synthetic values.
+ABC_TARGET = {
+    "peak_infectious": 57.0,   # mean of ON peaks across 6 runs: (70.8+88.6+73.5+45.5+35.3+30.9)/6
+    "peak_day":        25.0,   # first-wave peak day (median across runs, excluding late secondary peaks)
+    "attack_rate":      0.70,  # fraction ever infected over 150-tick ABC window (not full 365d)
+    "n_waves":          9.0,   # mean wave count: (8+7+8+8+11+14)/6 = 9.3
+    "mean_alert_level": 1.8,   # alert fires on day 1–4 in all runs, stays elevated — mean ~1.8
+}
+
+# ── Per-statistic weights for the distance function ───────────────────────────
+# Increase a weight to make calibration enforce that statistic more strictly.
+# n_waves gets triple weight because it was systematically missed at weight=1.
+ABC_STAT_WEIGHTS = {
+    "peak_infectious":  1.0,
+    "peak_day":         0.5,   # less critical — peak timing is noisy
+    "attack_rate":      1.0,
+    "n_waves":          3.0,   # triple weight — previously not being matched
+    "mean_alert_level": 0.5,   # less critical — emerges from other dynamics
+}
+
+# ── ABC-SMC hyperparameters ───────────────────────────────────────────────────
+ABC_N_PARTICLES    = 200    # particles per population
+ABC_N_POPULATIONS  = 5      # number of SMC populations (more → tighter posterior)
+ABC_EPSILON_START  = 2.0    # initial (loose) distance threshold
+ABC_EPSILON_END    = 0.80   # final threshold — keep achievable (was 0.4)
+ABC_PERTURB_SIGMA  = 0.003  # Gaussian perturbation kernel std for β₀
+ABC_SIM_TICKS      = TICKS_PER_DAY * 150   # 150 days sufficient to capture peaks (was 365)
+ABC_ZONES          = ["dense_periphery", "sparse_periphery"]
+
+
+def _abc_summary_stats(daily: list[dict], pop: "Population") -> dict:
+    """Compute summary statistics from a single simulation run."""
+    df = pd.DataFrame(daily)
+    if df.empty or df["infectious"].max() == 0:
+        return {
+            "peak_infectious":  0.0,
+            "peak_day":         0.0,
+            "attack_rate":      0.0,
+            "n_waves":          0.0,
+            "mean_alert_level": 0.0,
+        }
+
+    series     = df["infectious"].tolist()
+    wave_peaks = get_wave_peaks(series)
+    n_waves    = len(wave_peaks) if df["infectious"].max() >= WAVE_MIN_HEIGHT else 0
+
+    return {
+        "peak_infectious":  float(df["infectious"].max()),
+        "peak_day":         float(df.loc[df["infectious"].idxmax(), "day"]),
+        "attack_rate":      float((pop.infection_count >= 1).sum()) / pop.n,  # fraction ever infected (not reinfections)
+        "n_waves":          float(n_waves),
+        "mean_alert_level": float(df["alert_level"].mean()),
+    }
+
+
+def _abc_distance(obs: dict, sim: dict) -> float:
+    """
+    Weighted standardised Euclidean distance between observed and simulated
+    summary statistics.  Each statistic is divided by its target value
+    (scale normalisation) then multiplied by ABC_STAT_WEIGHTS so that
+    poorly-matched statistics can be penalised more heavily.
+    """
+    d = 0.0
+    for k in obs:
+        scale = abs(obs[k]) if abs(obs[k]) > 1e-6 else 1.0
+        w = ABC_STAT_WEIGHTS.get(k, 1.0)
+        d += w * ((obs[k] - sim[k]) / scale) ** 2
+    return float(np.sqrt(d))
+
+
+def _abc_sample_prior(rng: np.random.Generator) -> tuple[float, str]:
+    """Sample (β₀, zone) from the prior."""
+    beta0 = rng.uniform(0.005, 0.040)
+    zone  = rng.choice(ABC_ZONES)
+    return float(beta0), str(zone)
+
+
+def _abc_perturb(
+    beta0: float,
+    zone: str,
+    rng: np.random.Generator,
+) -> tuple[float, str]:
+    """Perturb a particle with a Gaussian kernel (β₀) and zone flip."""
+    new_beta = -1.0
+    while new_beta <= 0.0 or new_beta > 0.060:
+        new_beta = beta0 + rng.normal(0, ABC_PERTURB_SIGMA)
+    # zone: flip with small probability to allow zone exploration
+    new_zone = rng.choice(ABC_ZONES) if rng.random() < 0.10 else zone
+    return float(new_beta), str(new_zone)
+
+
+def _abc_prior_density(beta0: float, zone: str) -> float:
+    """Prior density p(θ) — uniform over β₀, equal prob over zones."""
+    if 0.005 <= beta0 <= 0.040:
+        return (1.0 / (0.040 - 0.005)) * (1.0 / len(ABC_ZONES))
+    return 0.0
+
+
+def _abc_kernel_density(
+    beta0_star: float,
+    zone_star: str,
+    particles: list[tuple[float, str]],
+    weights: np.ndarray,
+) -> float:
+    """
+    Transition kernel denominator:
+    Σ_i w_i * K(θ* | θ_i)
+    Gaussian kernel on β₀, indicator on zone.
+    """
+    total = 0.0
+    for (b, z), w in zip(particles, weights):
+        if z == zone_star:
+            k = np.exp(-0.5 * ((beta0_star - b) / ABC_PERTURB_SIGMA) ** 2)
+            k /= ABC_PERTURB_SIGMA * np.sqrt(2 * np.pi)
+            total += w * k
+    return max(total, 1e-300)
+
+
+# ── Parallel ABC worker (module-level so mp.Pool can pickle it) ───────────────
+
+def _abc_worker(args: tuple) -> dict | None:
+    """
+    Propose one candidate (β₀, zone), simulate, compute distance.
+    Returns a result dict if distance < epsilon, else None.
+    Called in parallel by mp.Pool — must be a top-level function.
+    """
+    beta0_star, zone_star, seed, epsilon, obs = args
+    rng_w = np.random.default_rng(seed)
+    try:
+        daily, pop = run_simulation(beta0_star, zone_star,
+                                    int(rng_w.integers(0, 2**31)),
+                                    policy_active=True,
+                                    n_ticks=ABC_SIM_TICKS)
+        sim_stats = _abc_summary_stats(daily, pop)
+        dist      = _abc_distance(obs, sim_stats)
+        if dist < epsilon:
+            return {"beta0": beta0_star, "zone": zone_star,
+                    "distance": dist, "seed": seed}
+    except Exception:
+        pass
+    return None
+
+
+def _abc_worker_stats(args: tuple) -> dict:
+    """Re-simulate a final particle to attach summary stats."""
+    beta0, zone, seed = args
+    daily, pop = run_simulation(beta0, zone, seed, policy_active=True)
+    return _abc_summary_stats(daily, pop)
+
+
+def run_calibrate():
+    """
+    Parallelised ABC-SMC calibration.
+    Each population samples candidates in parallel across all CPU cores.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    n_cores = mp.cpu_count()
+    rng     = np.random.default_rng(42)
+    obs     = ABC_TARGET
+
+    print("=" * 70)
+    print("ABC-SMC CALIBRATION  (parallelised)")
+    print(f"  Particles per population : {ABC_N_PARTICLES}")
+    print(f"  Populations              : {ABC_N_POPULATIONS}")
+    print(f"  ε schedule               : {ABC_EPSILON_START:.2f} → {ABC_EPSILON_END:.2f}")
+    print(f"  CPU cores                : {n_cores}")
+    print(f"  Prior: β₀ ~ Uniform(0.005, 0.040)  |  zone ~ Cat(0.5, 0.5)")
+    print(f"\n  Observed summary statistics (targets):")
+    for k, v in obs.items():
+        print(f"    {k:<22} = {v}")
+    print("=" * 70)
+
+    epsilons = np.linspace(ABC_EPSILON_START, ABC_EPSILON_END, ABC_N_POPULATIONS)
+
+    particles: list[tuple[float, str]] = []
+    weights  : np.ndarray              = np.array([])
+    distances: list[float]             = []
+    all_populations: list[pd.DataFrame] = []
+
+    # Batch size: submit this many candidates at once per round.
+    # Large enough to keep all cores busy; small enough to not overshoot target.
+    BATCH = n_cores * 8
+
+    for t, epsilon in enumerate(epsilons):
+        t0 = time.time()
+        print(f"\n── Population {t+1}/{ABC_N_POPULATIONS}  ε={epsilon:.3f}  "
+              f"(batch={BATCH}, cores={n_cores}) ──")
+
+        new_particles: list[tuple[float, str]] = []
+        new_weights  : list[float]             = []
+        new_distances: list[float]             = []
+        n_trials = 0
+
+        with mp.Pool(n_cores) as pool:
+            while len(new_particles) < ABC_N_PARTICLES:
+                # ── Propose a batch of candidates ────────────────────────────
+                proposals = []
+                for _ in range(BATCH):
+                    if t == 0 or len(particles) == 0:
+                        b, z = _abc_sample_prior(rng)
+                    else:
+                        idx  = rng.choice(len(particles), p=weights)
+                        b, z = _abc_perturb(particles[idx][0], particles[idx][1], rng)
+                        if _abc_prior_density(b, z) == 0.0:
+                            b, z = _abc_sample_prior(rng)
+                    seed = int(rng.integers(0, 2**31))
+                    proposals.append((b, z, seed, epsilon, obs))
+
+                n_trials += BATCH
+
+                # ── Simulate batch in parallel ───────────────────────────────
+                results = pool.map(_abc_worker, proposals)
+
+                for res, (b, z, seed, _, _obs) in zip(results, proposals):
+                    if res is None:
+                        continue
+                    if len(new_particles) >= ABC_N_PARTICLES:
+                        break
+
+                    # Importance weight
+                    if t == 0:
+                        w = 1.0
+                    else:
+                        prior  = _abc_prior_density(b, z)
+                        kernel = _abc_kernel_density(b, z, particles, weights)
+                        w      = prior / kernel
+
+                    new_particles.append((b, z))
+                    new_weights.append(w)
+                    new_distances.append(res["distance"])
+
+                accepted = len(new_particles)
+                if accepted % 50 < BATCH and accepted > 0:
+                    rate = accepted / n_trials
+                    eta  = (ABC_N_PARTICLES - accepted) / max(rate * BATCH / (time.time() - t0 + 1e-6), 1e-6)
+                    print(f"  accepted {accepted}/{ABC_N_PARTICLES}"
+                          f"  trials={n_trials}"
+                          f"  rate={rate:.1%}"
+                          f"  elapsed={time.time()-t0:.0f}s")
+
+                # Safety cap
+                if n_trials >= ABC_N_PARTICLES * 5000:
+                    print(f"  WARNING: hit trial cap at ε={epsilon:.3f}.")
+                    break
+
+        if not new_particles:
+            print(f"  WARNING: no particles accepted. Try raising ABC_EPSILON_START.")
+            continue
+
+        weights_arr = np.array(new_weights)
+        weights_arr = weights_arr / weights_arr.sum()
+        particles   = new_particles
+        weights     = weights_arr
+        distances   = new_distances
+
+        eff_n = 1.0 / (weights_arr ** 2).sum()
+        elapsed = time.time() - t0
+        print(f"  Done — accepted={len(particles)}  trials={n_trials}"
+              f"  rate={len(particles)/n_trials:.1%}"
+              f"  ESS={eff_n:.0f}  time={elapsed:.1f}s")
+
+        pop_df = pd.DataFrame({
+            "population": t + 1,
+            "epsilon":    epsilon,
+            "beta0":      [p[0] for p in particles],
+            "zone":       [p[1] for p in particles],
+            "weight":     weights_arr,
+            "distance":   distances,
+        })
+        all_populations.append(pop_df)
+
+    if not all_populations:
+        print("Calibration failed. Raise ABC_EPSILON_START or adjust ABC_TARGET.")
+        return
+
+    # ── Final posterior ───────────────────────────────────────────────────────
+    final_df = all_populations[-1].copy()
+
+    # Re-simulate final particles in parallel to attach summary stats
+    print("\nComputing summary statistics for final posterior particles...")
+    stat_args = [
+        (float(row["beta0"]), str(row["zone"]), int(rng.integers(0, 2**31)))
+        for _, row in final_df.iterrows()
+    ]
+    with mp.Pool(n_cores) as pool:
+        stats_rows = pool.map(_abc_worker_stats, stat_args)
+    stats_df = pd.DataFrame(stats_rows)
+    final_df = pd.concat([final_df.reset_index(drop=True), stats_df], axis=1)
+
+    posterior_path = os.path.join(DIR_DATA, "posterior.csv")
+    final_df.to_csv(posterior_path, index=False)
+    print(f"\nPosterior saved → {posterior_path}  ({len(final_df)} particles)")
+
+    # ── Posterior summary ─────────────────────────────────────────────────────
+    w = final_df["weight"].values
+    print("\nPosterior summary (weighted):")
+    e_beta = np.average(final_df["beta0"], weights=w)
+    sd_beta = np.sqrt(np.average((final_df["beta0"] - e_beta)**2, weights=w))
+    print(f"  E[β₀]   = {e_beta:.4f}  ± {sd_beta:.4f}")
+    for zone in ABC_ZONES:
+        frac = w[final_df["zone"] == zone].sum()
+        print(f"  P(zone={zone}) = {frac:.3f}")
+
+    # ── Plots ─────────────────────────────────────────────────────────────────
+    n_pops = len(all_populations)
+    fig, axes = plt.subplots(2, n_pops, figsize=(4 * n_pops, 7))
+    if n_pops == 1:
+        axes = axes.reshape(2, 1)
+
+    colors = {"dense_periphery": "steelblue", "sparse_periphery": "darkorange"}
+
+    for t, pop_df in enumerate(all_populations):
+        ax_top = axes[0, t]
+        ax_bot = axes[1, t]
+
+        for zone in ABC_ZONES:
+            sub = pop_df[pop_df["zone"] == zone]
+            ax_top.hist(
+                sub["beta0"], bins=20, weights=sub["weight"],
+                alpha=0.6, color=colors[zone], label=zone,
+                density=True,
+            )
+        ax_top.axvline(BASE_BETA, color="black", lw=1.5,
+                       linestyle="--", label=f"BASE_BETA={BASE_BETA}")
+        ax_top.set_title(f"Pop {t+1}  ε={pop_df['epsilon'].iloc[0]:.3f}")
+        ax_top.set_xlabel("β₀")
+        ax_top.set_ylabel("Weighted density")
+        if t == 0:
+            ax_top.legend(fontsize=6)
+
+        ax_bot.scatter(
+            pop_df["beta0"], pop_df["distance"],
+            c=[colors[z] for z in pop_df["zone"]],
+            s=10, alpha=0.5,
+        )
+        ax_bot.axhline(pop_df["epsilon"].iloc[0], color="red",
+                       lw=1, linestyle="--", label=f"ε={pop_df['epsilon'].iloc[0]:.3f}")
+        ax_bot.set_xlabel("β₀")
+        ax_bot.set_ylabel("Distance")
+        ax_bot.legend(fontsize=6)
+
+    fig.suptitle(
+        "ABC-SMC: β₀ posterior across populations\n"
+        f"(blue=dense_periphery, orange=sparse_periphery, dashed=BASE_BETA)",
+        fontsize=10,
+    )
+    fig.tight_layout()
+    plot_path = os.path.join(DIR_PLOTS, "abc_smc_posterior.png")
+    fig.savefig(plot_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Plot saved → {plot_path}")
+    print("=" * 70)
+    print("Upload data/processed/posterior.csv to the app's calibration panel.")
+    print("=" * 70)
+# ═════════════════════════════════════════════════════════════════════════════
 # Entry point
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -835,12 +1406,24 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SEIRD ABM")
     parser.add_argument(
         "--mode",
-        choices=["diagnose", "sweep", "generate"],
+        choices=["diagnose", "sweep", "generate", "calibrate"],
         default="diagnose",
         help=(
-            "diagnose : 6 runs + plots + auto checklist  |  "
-            "sweep    : 60-run quick validation  |  "
-            "generate : full 400-run CSV for PyMC"
+            "diagnose  : 6 runs + plots + auto checklist  |  "
+            "sweep     : 60-run quick validation  |  "
+            "generate  : full 400-run CSV for PyMC  |  "
+            "calibrate : ABC-SMC posterior over beta0 and zone"
+        ),
+    )
+    parser.add_argument(
+        "--target",
+        nargs=5,
+        metavar=("PEAK_INF", "PEAK_DAY", "ATTACK_RATE", "N_WAVES", "MEAN_ALERT"),
+        type=float,
+        default=None,
+        help=(
+            "Override ABC_TARGET with 5 observed summary statistics: "
+            "peak_infectious peak_day attack_rate n_waves mean_alert_level"
         ),
     )
     args = parser.parse_args()
@@ -851,3 +1434,12 @@ if __name__ == "__main__":
         run_sweep()
     elif args.mode == "generate":
         run_generate()
+    elif args.mode == "calibrate":
+        if args.target is not None:
+            keys = ["peak_infectious", "peak_day", "attack_rate",
+                    "n_waves", "mean_alert_level"]
+            ABC_TARGET.update(dict(zip(keys, args.target)))
+            print("Overriding ABC_TARGET with command-line values:")
+            for k, v in ABC_TARGET.items():
+                print(f"  {k} = {v}")
+        run_calibrate()
