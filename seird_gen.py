@@ -24,6 +24,7 @@ Dependencies: run the following line of code:
 """
 
 from __future__ import annotations
+import os
 import numpy as np
 import pandas as pd
 import argparse
@@ -33,6 +34,12 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from collections import deque
 from scipy.signal import find_peaks
+
+# ── Output directories ────────────────────────────────────────────────────────
+DIR_DATA  = os.path.join("data", "processed")
+DIR_PLOTS = os.path.join("outputs", "plots")
+os.makedirs(DIR_DATA,  exist_ok=True)
+os.makedirs(DIR_PLOTS, exist_ok=True)
 
 # ═════════════════════════════════════════════════════════════════════════════
 # ██  TUNING PARAMETERS — adjust these until all diagnostics show ✓  ██████████
@@ -658,7 +665,8 @@ def run_diagnostics():
     ]
 
     plt.tight_layout()
-    plt.savefig("diagnostics.png", dpi=150, bbox_inches="tight")
+    plot_path = os.path.join(DIR_PLOTS, "diagnostics.png")
+    plt.savefig(plot_path, dpi=150, bbox_inches="tight")
 
     print(f"\n{'='*70}")
     print("CHECKLIST:")
@@ -674,7 +682,7 @@ def run_diagnostics():
     else:
         print("\n  Fix failing checks → adjust parameters above → re-run --mode diagnose")
 
-    print(f"\nPlot saved → diagnostics.png")
+    print(f"\nPlot saved → {plot_path}")
     print("=" * 70)
 
 
@@ -816,9 +824,10 @@ def run_generate():
     ]
     df = df[[c for c in cols if c in df.columns]]
     df = df.sort_values(["group_id","run_id","policy_active"]).reset_index(drop=True)
-    df.to_csv("abm_outputs.csv", index=False)
+    csv_path = os.path.join(DIR_DATA, "abm_outputs.csv")
+    df.to_csv(csv_path, index=False)
 
-    print(f"Saved {len(df)} rows → abm_outputs.csv")
+    print(f"Saved {len(df)} rows → {csv_path}")
     print()
     print("Summary (policy=ON runs, mean across 20 runs per group):")
     on_df = df[df["policy_active"] == 1]
