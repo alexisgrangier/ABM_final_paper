@@ -1,8 +1,3 @@
-# ABM_final_paper
-This repository contains the code, the data and the final jupyter notebook for the final reearch paper of the course Bayesian Modelling of Complexity. I passed this course as part of the requirements for th Master of Data Science for Public Policy, Hertie School, Spring 2026.
-
-The python script `seird_gen.py` generates the data and saves the outputs as .png files. A notebook `hierarchical_bayes_abm.ipynb`accompanies the analysis.
-
 # Does Government Policy Save Lives?
 ### A Hierarchical Bayesian Analysis of Epidemic Wave Severity Across Compliance Zones
 
@@ -21,6 +16,33 @@ The answer is derived in two stages:
 2. **Hierarchical Bayesian Model (PyMC)** — a hierarchical Normal regression is fit to the 400-run dataset. It estimates the policy effect, the zone compliance effect, and their interaction, with partial pooling across the 10 (β₀ × zone) groups.
 
 A third component — **ABC-SMC calibration** — finds which transmission rates are consistent with the reference epidemic dynamics, and is visualised in the Streamlit app.
+
+---
+
+## How to Use
+
+**Step 1 — Install and generate data**
+```bash
+git clone https://github.com/alexisgrangier/ABM_final_paper
+cd ABM_final_paper
+uv sync
+uv run seird_gen.py --mode diagnose    # verify model config — all 7 checks should pass
+uv run seird_gen.py --mode generate    # produces data/processed/abm_outputs.csv (~2 min)
+uv run seird_gen.py --mode calibrate   # produces data/processed/posterior.csv (~15 min)
+```
+
+**Step 2 — Launch the app**
+```bash
+uv run streamlit run app.py
+```
+In the app: set zone and β₀ in the sidebar → **Initialize model** → **Run until end**. For the best result use `sparse_periphery` at β₀ = 0.020 (the posterior mean). Upload `posterior.csv` under Bayesian Calibration → **Compute uncertainty bands** → go to the **Bayesian Inference** tab.
+
+**Step 3 — Run the PyMC notebook**
+```bash
+pip install pymc arviz pandas numpy matplotlib
+jupyter notebook hierarchical_bayes_abm.ipynb
+```
+Run all cells. The notebook fits the hierarchical model to `abm_outputs.csv` and reproduces all figures and estimates from the paper.
 
 ---
 
@@ -168,4 +190,3 @@ streamlit  altair
 Grangier, A. (2026). *Does Government Policy Save Lives? A Hierarchical Bayesian Analysis of Epidemic Wave Severity Across Compliance Zones.* Bayesian Modeling of Complexity, Hertie School MDS.
 
 ABM originally designed with Anna Jurek based on a shared ODD protocol.
-

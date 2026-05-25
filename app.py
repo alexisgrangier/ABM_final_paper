@@ -410,10 +410,34 @@ def _compute_bayes_summary(posterior_df: pd.DataFrame) -> dict:
 if st.session_state.model is None and st.session_state.posterior_df is None:
     st.info("Initialize the model from the sidebar, or load a posterior CSV to explore Bayesian inference.")
 
-# ── Always show the Bayesian Inference tab if a posterior is loaded ───────────
+# ── Instructions button ───────────────────────────────────────────────────────
+with st.expander("📖 How to use this app", expanded=False):
+    st.markdown("""
+**Step 1 — Generate the data (run once from the terminal):**
+```bash
+uv run seird_gen.py --mode generate    # 400-run dataset → data/processed/abm_outputs.csv
+uv run seird_gen.py --mode calibrate   # ABC-SMC posterior → data/processed/posterior.csv
+```
+
+**Step 2 — Run the simulation**
+Set **zone** and **β₀:** in the sidebar, click **Initialize model**, then **Run until end**.
+Best result: use `sparse_periphery` at β₀ = 0.020 (the posterior mean).
+
+**Step 3 — Bayesian inference:**
+Upload `data/processed/posterior.csv` under **Bayesian Calibration** in the sidebar.
+Click **Compute uncertainty bands**, then open the **Bayesian Inference** tab.
+
+**Tab guide**
+- **Epidemic curves** — SEIRD state counts + daily confirmed cases
+- **Policy** — alert level and 7-day prevalence over time
+- **Reinfections & waves** — wave count, peak heights, population personality
+- **Bayesian Inference** — posterior over β₀, fit table, posterior predictive check
+- **Raw data** — full simulation output as downloadable CSV
+""")
+
 tabs_labels = ["Epidemic curves", "Policy", "Reinfections & waves",
-               "Bayesian Inference", "Grid snapshot", "Raw data"]
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(tabs_labels)
+               "Bayesian Inference", "Raw data"]
+tab1, tab2, tab3, tab4, tab5 = st.tabs(tabs_labels)
 
 
 # ── Tab 4: Bayesian Inference ─────────────────────────────────────────────────
@@ -707,7 +731,6 @@ if st.session_state.model is None:
     with tab2: st.info("Initialize the model from the sidebar.")
     with tab3: st.info("Initialize the model from the sidebar.")
     with tab5: st.info("Initialize the model from the sidebar.")
-    with tab6: st.info("Initialize the model from the sidebar.")
 else:
     df     = st.session_state.results_df
     latest = df.iloc[-1]
@@ -831,56 +854,8 @@ else:
                 use_container_width=True,
             )
 
-    # ── Tab 5: Grid snapshot ──────────────────────────────────────────────────
+    # ── Tab 5: Raw data ───────────────────────────────────────────────────────
     with tab5:
-        st.subheader("Live spatial animation")
-        col_ctrl1, col_ctrl2, _ = st.columns([1, 1, 2])
-        with col_ctrl1:
-            if st.button("▶ Play / ⏸ Pause", use_container_width=True):
-                st.session_state.playing = not st.session_state.get("playing", False)
-        with col_ctrl2:
-            tick_delay = st.slider("Speed (sec/tick)", 0.1, 2.0, 0.5, 0.1)
-
-        chart_ph = st.empty()
-        info_ph  = st.empty()
-
-        def render_grid():
-            p = st.session_state.model.individuals
-            snames = {
-                S.SUSCEPTIBLE: "Susceptible", S.EXPOSED: "Exposed",
-                S.INFECTIOUS_ASYMPTOMATIC: "Infectious (A)",
-                S.INFECTIOUS_SYMPTOMATIC:  "Infectious (S)",
-                S.RECOVERED: "Recovered", S.DEAD: "Dead",
-            }
-            pos_df = pd.DataFrame({"x": p.px, "y": p.py,
-                                   "state": [snames.get(s, str(s)) for s in p.state]})
-            n = min(2000, len(pos_df))
-            pos_df = pos_df.sample(n, random_state=42)
-            chart_ph.altair_chart(
-                alt.Chart(pos_df).mark_circle(size=20, opacity=0.65)
-                .encode(
-                    x=alt.X("x:Q", scale=alt.Scale(domain=[0, DEFAULT_GRID_SIZE])),
-                    y=alt.Y("y:Q", scale=alt.Scale(domain=[0, DEFAULT_GRID_SIZE])),
-                    color=alt.Color("state:N"),
-                    tooltip=["x", "y", "state"],
-                ).properties(height=560),
-                use_container_width=True,
-            )
-            info_ph.caption(f"Tick {st.session_state.model.tick} | Day {st.session_state.model.current_day:.1f} | {n} agents shown")
-
-        render_grid()
-        if st.session_state.get("playing", False):
-            while st.session_state.get("playing", False):
-                if st.session_state.model.tick >= st.session_state.model.total_ticks:
-                    st.session_state.playing = False
-                    break
-                st.session_state.model.step()
-                st.session_state.results_df = st.session_state.model.get_results_df()
-                render_grid()
-                time.sleep(tick_delay)
-
-    # ── Tab 6: Raw data ───────────────────────────────────────────────────────
-    with tab6:
         st.subheader("Raw simulation output")
         st.dataframe(df, use_container_width=True)
         st.download_button(
